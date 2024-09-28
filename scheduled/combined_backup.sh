@@ -9,41 +9,49 @@ backup_app() {
     local TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
     local BACKUP_FILE="${APP_NAME}_backup_${TIMESTAMP}.zip"
     local DB_USER="qstick"
-    local DB_MAIN="${APP_NAME}-main"
-    local DB_LOG="${APP_NAME}-log"
 
     echo "Starting backup for ${APP_NAME}..."
 
     # Ensure backup directory exists
     mkdir -p "$BACKUP_DIR" || { echo "Failed to create backup directory for ${APP_NAME}"; return 1; }
 
-    # Perform Postgres dump for main database
-    if ! docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "$DB_MAIN" > "${BACKUP_DIR}/${APP_NAME}_main_db_${TIMESTAMP}.sql"; then
-        echo "Failed to backup main database for ${APP_NAME}"
-        return 1
-    fi
+    # Array to store database dump files
+    local DB_DUMPS=()
 
-    # Perform Postgres dump for log database
-    if ! docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "$DB_LOG" > "${BACKUP_DIR}/${APP_NAME}_log_db_${TIMESTAMP}.sql"; then
-        echo "Failed to backup log database for ${APP_NAME}"
-        return 1
-    fi
+    # Perform Postgres dumps based on the application
+    case $APP_NAME in
+        sonarr|radarr|lidarr|readarr)
+            docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "${APP_NAME}-main" > "${BACKUP_DIR}/${APP_NAME}_main_db_${TIMESTAMP}.sql"
+            docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "${APP_NAME}-log" > "${BACKUP_DIR}/${APP_NAME}_log_db_${TIMESTAMP}.sql"
+            DB_DUMPS+=("${APP_NAME}_main_db_${TIMESTAMP}.sql" "${APP_NAME}_log_db_${TIMESTAMP}.sql")
+            if [ "$APP_NAME" == "readarr" ]; then
+                docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "readarr-cache" > "${BACKUP_DIR}/readarr_cache_db_${TIMESTAMP}.sql"
+                DB_DUMPS+=("readarr_cache_db_${TIMESTAMP}.sql")
+            fi
+            ;;
+        prowlarr)
+            docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "prowlarr-main" > "${BACKUP_DIR}/prowlarr_main_db_${TIMESTAMP}.sql"
+            DB_DUMPS+=("prowlarr_main_db_${TIMESTAMP}.sql")
+            ;;
+        bazarr)
+            docker exec $POSTGRES_CONTAINER pg_dump -U "$DB_USER" "bazarr" > "${BACKUP_DIR}/bazarr_db_${TIMESTAMP}.sql"
+            DB_DUMPS+=("bazarr_db_${TIMESTAMP}.sql")
+            ;;
+        *)
+            echo "Unknown application: ${APP_NAME}"
+            return 1
+            ;;
+    esac
 
     # Copy config.xml
-    if ! cp "${DOCKER_DIR}/config/config.xml" "${BACKUP_DIR}/config_${TIMESTAMP}.xml"; then
-        echo "Failed to copy config.xml for ${APP_NAME}"
-        return 1
-    fi
+    cp "${DOCKER_DIR}/config/config.xml" "${BACKUP_DIR}/config_${TIMESTAMP}.xml" || { echo "Failed to copy config.xml for ${APP_NAME}"; return 1; }
 
     # Create zip file
     cd "$BACKUP_DIR" || { echo "Failed to change directory to ${BACKUP_DIR}"; return 1; }
-    if ! zip "$BACKUP_FILE" "${APP_NAME}_main_db_${TIMESTAMP}.sql" "${APP_NAME}_log_db_${TIMESTAMP}.sql" "config_${TIMESTAMP}.xml"; then
-        echo "Failed to create zip file for ${APP_NAME}"
-        return 1
-    fi
+    zip "$BACKUP_FILE" "config_${TIMESTAMP}.xml" "${DB_DUMPS[@]}" || { echo "Failed to create zip file for ${APP_NAME}"; return 1; }
 
     # Clean up temporary files
-    rm "${APP_NAME}_main_db_${TIMESTAMP}.sql" "${APP_NAME}_log_db_${TIMESTAMP}.sql" "config_${TIMESTAMP}.xml"
+    rm "config_${TIMESTAMP}.xml" "${DB_DUMPS[@]}"
 
     echo "${APP_NAME} backup completed: ${BACKUP_DIR}/${BACKUP_FILE}"
     return 0
@@ -51,8 +59,8 @@ backup_app() {
 
 # Main script execution
 main() {
-    echo "Starting combined backup process..."
-    local apps=("radarr" "sonarr" "lidarr" "readarr" "prowlarr" "bazarr")
+    echo "Starting combined backup process for ALL ARR applications..."
+    local apps=("sonarr" "radarr" "lidarr" "readarr" "prowlarr" "bazarr")
     local failed_apps=()
 
     for app in "${apps[@]}"; do
