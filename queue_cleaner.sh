@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-scriptVersion="7.0"
+scriptVersion="9.0"
 scriptName="queue_cleaner.sh"
 
 # Load environment variables
@@ -61,8 +61,38 @@ verifyConfig() {
         done
     fi
 
-    if [ -z "$RADARR_INSTANCES" ] && [ -z "$SONARR_INSTANCES" ]; then
-        log "Error: No valid Radarr or Sonarr instances configured. Exiting."
+    # Verify Readarr instances
+    if [ -z "$READARR_INSTANCES" ]; then
+        log "Warning: No Readarr instances defined. Readarr functionality will be disabled."
+    else
+        for instance in $READARR_INSTANCES; do
+            url_var="READARR_${instance}_URL"
+            api_key_var="READARR_${instance}_API_KEY"
+            if [ -z "${!url_var}" ] || [ -z "${!api_key_var}" ]; then
+                log "Warning: $instance is missing URL or API key. This instance will be skipped."
+            else
+                log "Readarr instance configured: $instance"
+            fi
+        done
+    fi
+
+    # Verify Lidarr instances
+    if [ -z "$LIDARR_INSTANCES" ]; then
+        log "Warning: No Lidarr instances defined. Lidarr functionality will be disabled."
+    else
+        for instance in $LIDARR_INSTANCES; do
+            url_var="LIDARR_${instance}_URL"
+            api_key_var="LIDARR_${instance}_API_KEY"
+            if [ -z "${!url_var}" ] || [ -z "${!api_key_var}" ]; then
+                log "Warning: $instance is missing URL or API key. This instance will be skipped."
+            else
+                log "Lidarr instance configured: $instance"
+            fi
+        done
+    fi
+
+    if [ -z "$RADARR_INSTANCES" ] && [ -z "$SONARR_INSTANCES" ] && [ -z "$READARR_INSTANCES" ] && [ -z "$LIDARR_INSTANCES" ]; then
+        log "Error: No valid Radarr, Sonarr, Readarr, or Lidarr instances configured. Exiting."
         exit 1
     fi
 }
@@ -78,13 +108,32 @@ triggerSearch() {
     local url=${!url_var}
     local api_key=${!api_key_var}
 
-    if [ "$arrType" = "RADARR" ]; then
-        search_command="MoviesSearch"
-        search_payload="{\"name\":\"$search_command\",\"movieIds\":[$itemId]}"
-    else
-        search_command="SeriesSearch"
-        search_payload="{\"name\":\"$search_command\",\"seriesId\":$itemId}"
-    fi
+    case "$arrType" in
+        RADARR)
+            search_command="MoviesSearch"
+            search_payload="{\"name\":\"$search_command\",\"movieIds\":[$itemId]}"
+            api_version="v3"
+            ;;
+        SONARR)
+            search_command="SeriesSearch"
+            search_payload="{\"name\":\"$search_command\",\"seriesId\":$itemId}"
+            api_version="v3"
+            ;;
+        READARR)
+            search_command="AuthorSearch"
+            search_payload="{\"name\":\"$search_command\",\"authorId\":$itemId}"
+            api_version="v1"
+            ;;
+        LIDARR)
+            search_command="ArtistSearch"
+            search_payload="{\"name\":\"$search_command\",\"artistId\":$itemId}"
+            api_version="v1"
+            ;;
+        *)
+            log "Error: Unknown arrType: $arrType"
+            return 1
+            ;;
+    esac
 
     if [ -z "$itemId" ] || [ "$itemId" == "null" ]; then
         log "Error: Invalid item ID for $itemTitle in $instance. Skipping search."
@@ -96,7 +145,7 @@ triggerSearch() {
         return
     fi
     local searchResponse
-    searchResponse=$(curl -s -X POST "$url/api/v3/command" -H "X-Api-Key: $api_key" -H "Content-Type: application/json" -d "$search_payload")
+    searchResponse=$(curl -s -X POST "$url/api/$api_version/command" -H "X-Api-Key: $api_key" -H "Content-Type: application/json" -d "$search_payload")
     
     if echo "$searchResponse" | jq -e '.id' >/dev/null 2>&1; then
         log "Search triggered successfully for $itemTitle in $instance"
@@ -119,14 +168,31 @@ processQueue() {
         return 1
     fi
 
-    if [ "$arrType" = "RADARR" ]; then
-        id_field="movieId"
-    else
-        id_field="seriesId"
-    fi
+    case "$arrType" in
+        RADARR)
+            id_field="movieId"
+            api_version="v3"
+            ;;
+        SONARR)
+            id_field="seriesId"
+            api_version="v3"
+            ;;
+        READARR)
+            id_field="authorId"
+            api_version="v1"
+            ;;
+        LIDARR)
+            id_field="artistId"
+            api_version="v1"
+            ;;
+        *)
+            log "Error: Unknown arrType: $arrType"
+            return 1
+            ;;
+    esac
 
     local arrQueueData
-    arrQueueData=$(curl -s "$url/api/v3/queue?page=1&pagesize=200&sortDirection=descending&sortKey=progress&includeUnknownItems=true&apikey=$api_key")
+    arrQueueData=$(curl -s "$url/api/$api_version/queue?page=1&pageSize=200&sortDirection=descending&sortKey=progress&includeUnknownItems=true&apikey=$api_key")
     
     if [ -z "$arrQueueData" ] || [ "$(echo "$arrQueueData" | jq -r '.error // empty')" != "" ]; then
         log "Error: Failed to fetch queue data from $arrType instance $instance. Please check your URL and API key."
@@ -171,7 +237,7 @@ processQueue() {
                 continue
             fi
             local deleteResponse
-            deleteResponse=$(curl -sX DELETE "$url/api/v3/queue/$queueId?removeFromClient=true&blocklist=true&apikey=$api_key")
+            deleteResponse=$(curl -sX DELETE "$url/api/$api_version/queue/$queueId?removeFromClient=true&blocklist=true&apikey=$api_key")
             if [ -z "$deleteResponse" ]; then
                 log "$arrType $instance: Successfully removed item $queueId and added to blocklist"
                 # Trigger a new search for the item
@@ -209,6 +275,26 @@ main() {
             if [ -n "${!url_var}" ] && [ -n "${!api_key_var}" ]; then
                 log "Processing Sonarr instance: $instance"
                 processQueue "SONARR" "$instance"
+            fi
+        done
+
+        # Process Readarr instances
+        for instance in $READARR_INSTANCES; do
+            url_var="READARR_${instance}_URL"
+            api_key_var="READARR_${instance}_API_KEY"
+            if [ -n "${!url_var}" ] && [ -n "${!api_key_var}" ]; then
+                log "Processing Readarr instance: $instance"
+                processQueue "READARR" "$instance"
+            fi
+        done
+
+        # Process Lidarr instances
+        for instance in $LIDARR_INSTANCES; do
+            url_var="LIDARR_${instance}_URL"
+            api_key_var="LIDARR_${instance}_API_KEY"
+            if [ -n "${!url_var}" ] && [ -n "${!api_key_var}" ]; then
+                log "Processing Lidarr instance: $instance"
+                processQueue "LIDARR" "$instance"
             fi
         done
 
