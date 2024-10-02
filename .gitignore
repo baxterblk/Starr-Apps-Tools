@@ -1,0 +1,12 @@
+# Ignore the actual .env file
+.env
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+*.tmp
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
