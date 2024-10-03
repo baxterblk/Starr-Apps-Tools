@@ -1,0 +1,4 @@
+plexapi
+requests
+tqdm
+colorama
