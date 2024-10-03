@@ -1,2 +1,2 @@
-:star: # Starr-Apps-Tools
+:star: Starr-Apps-Tools
 
