@@ -1,0 +1,431 @@
+x-common-vars: &common-vars
+  PUID: ${PUID}
+  PGID: ${PGID}
+  TZ: ${TZ}
+  UMASK: ${UMASK}
+
+x-common-opts: &common-opts
+  restart: always
+  networks:
+    - npm
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-healthcheck: &healthcheck-defaults
+  interval: ${HEALTH_CHECK_INTERVAL}
+  timeout: ${HEALTH_CHECK_TIMEOUT}
+  retries: ${HEALTH_CHECK_RETRIES}
+  start_period: ${HEALTH_CHECK_START_PERIOD}
+
+services:
+  # Media Server
+  plex:
+    <<: *common-opts
+    container_name: plex
+    image: ghcr.io/hotio/plex:latest
+    ports:
+      - "${PLEX_PORT}:32400"
+    environment:
+      <<: *common-vars
+      PLEX_CLAIM: ${PLEX_CLAIM_TOKEN}
+      ADVERTISE_IP: ${PLEX_ADVERTISE_URL}
+      ALLOWED_NETWORKS: ${LAN_NETWORK}
+    volumes:
+      - ${CONFIG_BASE}/plex/config:/config
+      - ${MEDIA_PATH}:/data
+    devices:
+      - /dev/dri:/dev/dri
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:32400/web/index.html"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  # Media Management
+  lidarr:
+    <<: *common-opts
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/lidarr/config:/config
+      - ${BACKUP_PATH}/lidarr:/backups
+      - ${MEDIA_PATH}:/data
+      - /home/user/docker/lidarr/folder-01:/custom-services.d
+      - /home/user/docker/lidarr/folder-02:/custom-cont-init.d
+    ports:
+      - "${LIDARR_PORT}:8686"
+
+  sonarr:
+    <<: *common-opts
+    build: ./sonarr
+    container_name: sonarr
+    image: lscr.io/linuxserver/sonarr:latest
+    ports:
+      - "${SONARR_PORT}:8989"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/sonarr/config:/config
+      - ${BACKUP_PATH}/sonarr:/backups
+      - ${MEDIA_PATH}:/data
+      - /home/user/docker/sonarr/folder-01:/custom-services.d
+      - /home/user/docker/sonarr/folder-02:/custom-cont-init.d
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8989/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  radarr:
+    <<: *common-opts
+    container_name: radarr
+    build: ./radarr
+    image: lscr.io/linuxserver/radarr:latest
+    ports:
+      - "${RADARR_PORT}:7878"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/radarr/config:/config
+      - ${MEDIA_PATH}:/data
+      - ${BACKUP_PATH}/radarr:/backups
+      - /home/user/docker/radarr/folder-01:/custom-services.d
+      - /home/user/docker/radarr/folder-02:/custom-cont-init.d
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:7878/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  bazarr:
+    <<: *common-opts
+    container_name: bazarr
+    image: lscr.io/linuxserver/bazarr:latest
+    environment:
+      <<: *common-vars
+    volumes:
+      - /home/user/docker/bazarr/config:/config
+      - ${MEDIA_PATH}:/data
+      - ${BACKUP_PATH}/bazarr:/backups
+    ports:
+      - "6767:6767"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:6767/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+      
+  readarr:
+    <<: *common-opts
+    image: ghcr.io/linuxserver/readarr:develop
+    container_name: readarr
+    hostname: readarr
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/readarr/config:/config
+      - ${CONFIG_BASE}/readarr/folder-01:/custom-services.d
+      - ${CONFIG_BASE}/readarr/folder-02:/custom-cont-init.d
+      - ${BACKUP_PATH}/readarr:/backups
+      - ${MEDIA_PATH}:/data
+    ports:
+      - "8787:8787"
+
+  # Postgres Databases
+  lidarr-postgres:
+    <<: *common-opts
+    container_name: lidarr-postgres
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - npm
+    volumes:
+      - ${CONFIG_BASE}/lidarr/postgres:/var/lib/postgresql/data
+
+  sonarr-postgres:
+    <<: *common-opts
+    container_name: sonarr-postgres
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - npm
+    volumes:
+      - ${CONFIG_BASE}/sonarr/postgres:/var/lib/postgresql/data
+
+  radarr-postgres:
+    <<: *common-opts
+    container_name: radarr-postgres
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    networks:
+      - npm
+    volumes:
+      - ${CONFIG_BASE}/radarr/postgres:/var/lib/postgresql/data
+
+ # E-book Reader
+  calibre-web:
+    <<: *common-opts  
+    image: ghcr.io/linuxserver/calibre-web:latest
+    container_name: calibre-web
+    hostname: calibre-web
+    depends_on:
+      - readarr
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/calibre-web/config:/config
+      - ${MEDIA_PATH}:/data
+    ports:
+      - "8083:8083"
+      
+  # Indexers and Search
+  prowlarr:
+    <<: *common-opts
+    container_name: prowlarr
+    image: ghcr.io/hotio/prowlarr:latest
+    ports:
+      - "${PROWLARR_PORT}:9696"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/prowlarr/config:/config
+      - ${BACKUP_PATH}/prowlarr:/backups
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:9696/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  # Download Clients
+  sabnzbd:
+    <<: *common-opts
+    container_name: sabnzbd
+    image: lscr.io/linuxserver/sabnzbd:latest
+    ports:
+      - "${SABNZBD_PORT}:8080"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/sabnzbd/config:/config
+      - ${DOWNLOAD_PATH}:/data
+      - ${BACKUP_PATH}/sabnzbd:/backups
+      - /home/user/docker/sabnzbd/folder-01:/custom-cont-init.d
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  gluetun:
+    <<: *common-opts
+    container_name: gluetun
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - VPN_SERVICE_PROVIDER=
+      - VPN_TYPE=
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_CITIES=Chicago IL
+    ports:
+      - "${QBITTORRENT_PORT}:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+
+  qbittorrent:
+    restart: always
+    container_name: qbittorrent
+    image: lscr.io/linuxserver/qbittorrent:latest
+    network_mode: "service:gluetun"
+    environment:
+      <<: *common-vars
+      WEBUI_PORT: 8080
+    volumes:
+      - /home/user/docker/qbittorrent/config:/config
+      - /home/user/docker/qbittorrent/tmp:/tmp
+      - ${DOWNLOAD_PATH}:/data
+    depends_on:
+      - gluetun
+
+  # User Interfaces
+  overseerr:
+    <<: *common-opts
+    container_name: overseerr
+    image: sctx/overseerr:latest
+    ports:
+      - "${OVERSEERR_PORT}:5055"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/overseerr/config:/app/config
+#    healthcheck:
+#      <<: *healthcheck-defaults
+#      test: ["CMD", "curl", "-f", "http://localhost:5055/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  wizarr:
+    <<: *common-opts
+    container_name: wizarr
+    image: ghcr.io/wizarrrr/wizarr:latest
+    environment:
+      <<: *common-vars
+    ports:
+      - "${WIZARR_PORT}:5690"
+    volumes:
+      - ${CONFIG_BASE}/wizarr/database:/data/database
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:5690/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  # Monitoring and Analytics
+  tautulli:
+    <<: *common-opts
+    container_name: tautulli
+    image: ghcr.io/tautulli/tautulli:latest
+    ports:
+      - "${TAUTULLI_PORT}:8181"
+    environment:
+      <<: *common-vars
+    volumes:
+      - ${CONFIG_BASE}/tautulli/config:/config
+      - ${CONFIG_BASE}/plex/Library/Application Support/Plex Media Server/Logs:/plex_logs:ro
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8181/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  # System Management
+  portainer_agent:
+    <<: *common-opts
+    container_name: portainer_agent
+    image: portainer/agent:2.21.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+    ports:
+      - "${PORTAINER_PORT}:9001"
+
+  watchtower:
+    <<: *common-opts
+    container_name: watchtower
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+    command: --schedule "${WATCHTOWER_SCHEDULE}"
+
+  # Utilities
+  kometa:
+    <<: *common-opts
+    container_name: kometa
+    image: lscr.io/linuxserver/kometa:latest
+    ports:
+      - "${KOMETA_PORT}:9000"
+    environment:
+      <<: *common-vars
+      KOMETA_CONFIG: ${KOMETA_CONFIG}
+      KOMETA_TIME: ${KOMETA_TIME}
+      KOMETA_RUN: ${KOMETA_RUN}
+      KOMETA_TEST: ${KOMETA_TEST}
+      KOMETA_NO_MISSING: ${KOMETA_NO_MISSING}
+    volumes:
+      - ${CONFIG_BASE}/kometa/config:/config
+#    healthcheck:
+#      <<: *healthcheck-defaults
+#      test: ["CMD", "curl", "-f", "http://localhost:9000/"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.monitor-only=false"
+      - "com.centurylinklabs.watchtower.schedule=${WATCHTOWER_SCHEDULE}"
+
+  recyclarr:
+    <<: *common-opts
+    image: ghcr.io/recyclarr/recyclarr:latest
+    hostname: recyclarr
+    container_name: recyclarr
+    user: ${PUID}:${PGID}
+    environment:
+      <<: *common-vars
+      CRON_SCHEDULE: '@daily'
+#      RECYCLARR_CREATE_CONFIG: 'true'
+    volumes:
+      - ${CONFIG_BASE}/recyclarr/config:/config
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "ls", "/config/recyclarr.yml"]
+
+  unpackerr:
+    <<: *common-opts
+    container_name: unpackerr
+    image: golift/unpackerr
+    volumes:
+      - ${DOWNLOAD_PATH}:/downloads
+      - /home/user/docker/unpackerr/config:/config
+    user: ${PUID}:${PGID}
+    environment:
+      <<: *common-vars
+      UN_LOG_FILE: /downloads/unpackerr.log
+      UN_SONARR_0_URL: ${UNPACKERR_SONARR_URL}
+      UN_SONARR_0_API_KEY: ${UNPACKERR_SONARR_API_KEY}
+      UN_RADARR_0_URL: ${UNPACKERR_RADARR_URL}
+      UN_RADARR_0_API_KEY: ${UNPACKERR_RADARR_API_KEY}
+      UN_LIDARR_0_URL: ${UNPACKERR_LIDARR_URL}
+      UN_LIDARR_0_API_KEY: ${UNPACKERR_LIDARR_API_KEY}
+      UN_PROWLARR_0_URL: ${UNPACKERR_PROWLARR_URL}
+      UN_PROWLARR_0_API_KEY: ${UNPACKERR_PROWLARR_API_KEY}
+      UN_READARR_0_URL: ${UNPACKERR_READARR_URL}
+      UN_READARR_0_API_KEY: ${UNPACKERR_READARR_API_KEY}
+
+  adminer:
+    <<: *common-opts
+    image: adminer:latest
+    container_name: adminer
+    environment:
+      <<: *common-vars
+    ports:
+      - "8680:8080"
+
+networks:
+  npm:
+    external: true
