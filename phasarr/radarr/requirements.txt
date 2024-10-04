@@ -1,4 +1,4 @@
-plexapi
-requests
-tqdm
-colorama
+plexapi==4.13.2
+requests==2.28.2
+tqdm==4.65.0
+colorama==0.4.6
