@@ -1,0 +1,24 @@
+[Logging]
+LogFile = sonarr_duplicate_manager.log
+
+[Plex]
+URL = http://your-plex-server:32400
+Token = your-plex-token
+
+[Sonarr:Main]
+URL = http://your-main-sonarr:8989
+APIKey = your-main-sonarr-api-key
+PlexLibrary = TV Shows
+
+[Sonarr:4K]
+URL = http://your-4k-sonarr:8990
+APIKey = your-4k-sonarr-api-key
+PlexLibrary = 4K TV Shows
+
+[Sonarr:Anime]
+URL = http://your-anime-sonarr:8991
+APIKey = your-anime-sonarr-api-key
+PlexLibrary = Anime
+
+[General]
+TrashDirectory = ./trash
