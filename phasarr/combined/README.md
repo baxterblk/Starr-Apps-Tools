@@ -89,15 +89,3 @@ This will perform a dry run, showing which files would be processed without actu
 ## Output
 
 The script will generate a log file (specified in the config.ini) with detailed information about the process. If you use the dry run option, it will also create a report file showing which files would be processed.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
-
-## Disclaimer
-
-Use this script at your own risk. Always ensure you have backups of your media files before running any automated deletion or moving processes.
