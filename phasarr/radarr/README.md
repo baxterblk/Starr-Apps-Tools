@@ -27,7 +27,8 @@ This script helps manage and remove duplicate movie files between a Plex server 
 1. Clone the repository:
 
    ```bash
-   git clone https://git.blakbox.vip/baxterblk/phasarr/src/branch/main/radarr
+   git clone https://git.blakbox.vip/baxterblk/Starr-Apps-Tools.git
+   cd Starr-Apps-Tools/phasarr/radarr
    ```
 
 2. Install the required libraries:
