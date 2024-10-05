@@ -1,4 +1,4 @@
-# 🌟 Starr-Apps-Tools: Media Management Companions
+# 🌟 Starr-Apps-Tools
 
 Welcome to my collection of Starr-Apps-Tools, where I've carefully curated a set of scripts and tools to boost my *arr experience.
 
